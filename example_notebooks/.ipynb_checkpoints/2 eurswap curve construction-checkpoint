@@ -1,0 +1,445 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "f60f41b9",
+   "metadata": {},
+   "source": [
+    "Note: \n",
+    "\n",
+    "Both SwapRateMCSimulator and SwapRatePCAEstimator require historical swap rate time series data in a specific format.\n",
+    "If no explicit file path is provided to the constructor, a default CSV file will be used instead.\n",
+    "\n",
+    "The default dataset is located in the \"curve_data\" folder of the project (see \"eur_swap_ts.csv\" for the expected format).\n",
+    "\n",
+    "In the examples below, a file path is explicitly provided, although it points to the same data as the default."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e6ccd9b0-ab0b-463f-8e07-3c9c27289d97",
+   "metadata": {},
+   "source": [
+    "This notebook demonstrates construction of an EUR curve calibrated to EURIBOR6M swap rates: The \"eurswap\" curve used for\n",
+    "discounting, pricing and risk in the project. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "a88c0127-bf9f-44a6-8d0c-fba2253a5505",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\mduba\\Desktop\\Programming\\Python\\alm_ir_hedging_prototype\n",
+      "C:\\Users\\mduba\\Desktop\\Programming\\Python\\alm_ir_hedging_prototype\\curve_data\\eur_swap_ts.csv\n"
+     ]
+    }
+   ],
+   "source": [
+    "from __future__ import annotations\n",
+    "import os \n",
+    "from pathlib import Path\n",
+    "\n",
+    "# It is assumed that the notebook is executed from within the project - either root or sub folder. \n",
+    "CWD_PATH = Path.cwd()\n",
+    "SWAP_TIME_SERIES_CSV_PATH = \"\"\n",
+    "\n",
+    "for parent in CWD_PATH.parents:\n",
+    " if (parent / \"src\").exists():\n",
+    "     SWAP_TIME_SERIES_CSV_PATH = parent / \"curve_data\" / \"eur_swap_ts.csv\"\n",
+    "     break       \n",
+    " else:\n",
+    "     SWAP_TIME_SERIES_CSV_PATH = CWD_PATH / \"curve_data\" / \"eur_swap_ts.csv\"\n",
+    "\n",
+    "print(CWD_PATH)\n",
+    "print(SWAP_TIME_SERIES_CSV_PATH)   "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "id": "75209b20-d8d2-47a2-ac50-4006b7d75665",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# imports \n",
+    "from typing import Dict, Tuple\n",
+    "from datetime import datetime \n",
+    "import copy\n",
+    "import numpy as np\n",
+    "import pandas as pd \n",
+    "from rateslib import IRS as rlIRS, Curve as rlCurve, Solver as rlSolver, calendars as rlCalendars, Frequency as rlFrequency \n",
+    "from curve_engine.swap_curve_solver import SwapCurveSolver\n",
+    "from curve_engine.swap_rate_pca_estimator import SwapRatePCAEstimator \n",
+    "from curve_engine.swap_curve_builder import SwapCurveBuilder"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "id": "6a3f2dce-889f-442b-9d97-74296d072a63",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# parameters \n",
+    "curve_date = datetime(2026,3,31)\n",
+    "swap_rates =  {\n",
+    " '2Y' : 2.948 , \n",
+    " '3Y' : 2.934, \n",
+    " '5Y' : 2.983, \n",
+    " '7Y' : 3.036, \n",
+    " '10Y': 3.11,  \n",
+    " '12Y': 3.195,  \n",
+    " '15Y': 3.2439, \n",
+    " '20Y': 3.246, \n",
+    " '25Y': 3.186,\n",
+    " '30Y': 3.115 }"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "id": "0822ec30-35d2-4679-982f-520cde60bf06",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# create pca from csv file with time series data for swap rates\n",
+    "swap_rate_pca = SwapRatePCAEstimator.from_csv( swap_ts_csv_path = SWAP_TIME_SERIES_CSV_PATH ) "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "9bb41c3e-812e-43bf-a0da-0523c5b49cfe",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "SUCCESS: `func_tol` reached after 7 iterations (levenberg_marquardt), `f_val`: 4.554749889445546e-16, `time`: 0.2132s\n"
+     ]
+    }
+   ],
+   "source": [
+    "# create a curve solver (wraps a Rateslib Class) - enables calibration of curve to swap rates\n",
+    "solver = SwapCurveSolver(\n",
+    " solver_id = 'eurswap_solver', \n",
+    " curve_date = curve_date, \n",
+    " instrument_rates = swap_rates\n",
+    ")    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "id": "356f3125-9ef1-4e31-93ab-846284161628",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# construct the curve (wraps a Rateslib Class)     \n",
+    "curve = SwapCurveBuilder.from_solver(\n",
+    " curve_id = 'eurswap', \n",
+    " curve_solver = solver)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "id": "5ddd70fe-9e06-452a-84fc-d3f285a31b5e",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "SUCCESS: `func_tol` reached after 0 iterations (levenberg_marquardt), `f_val`: 0.0, `time`: 0.0047s\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\mduba\\Desktop\\Programming\\Python\\alm_ir_hedging_prototype\\.venv\\Lib\\site-packages\\rateslib\\curves\\curves.py:275: UserWarning: Evaluating points on a curve beyond the endpoint of the basic spline interval is undefined.\n",
+      "date: 2056-04-07, spline end: 2056-04-05, curve id: 'eurswap_solver'\n",
+      "This often occurs when a curve is constructed with a final node date that aligns with the maturity of an instrument with a payment lag.\n",
+      "In the case that the instrument has a payment lag (e.g. a SOFR swap or ESTR swap or bond terminating on a non-business day) then a cashflow will occur after the maturity of the instrument.\n",
+      "The solution is to ensure that the final node date of the curve is changed to be beyond that expected payment date.\n",
+      "  warnings.warn(\n"
+     ]
+    }
+   ],
+   "source": [
+    "# create the par->forward Jacobian for the curve - needed to derive forward swap rates\n",
+    "curve.calc_par_fwd_jacobian()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "id": "1c9c9391-8ba5-4acf-97b9-e67afdc27d76",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# use the pca above to derive principal components for the curve\n",
+    "curve.calc_par_pc_jacobian( pca = swap_rate_pca )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "id": "d6eefddb-54f3-499b-9bf7-cd968de8a7bb",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Node</th>\n",
+       "      <th>PC1</th>\n",
+       "      <th>PC2</th>\n",
+       "      <th>PC3</th>\n",
+       "      <th>PC4</th>\n",
+       "      <th>PC5</th>\n",
+       "      <th>PC6</th>\n",
+       "      <th>PC7</th>\n",
+       "      <th>PC8</th>\n",
+       "      <th>PC9</th>\n",
+       "      <th>PC10</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>2Y</td>\n",
+       "      <td>0.266878</td>\n",
+       "      <td>-0.480085</td>\n",
+       "      <td>-0.018462</td>\n",
+       "      <td>0.152926</td>\n",
+       "      <td>-0.378934</td>\n",
+       "      <td>0.542975</td>\n",
+       "      <td>-0.359401</td>\n",
+       "      <td>0.291825</td>\n",
+       "      <td>-0.089930</td>\n",
+       "      <td>0.117206</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>3Y</td>\n",
+       "      <td>0.327425</td>\n",
+       "      <td>-0.562962</td>\n",
+       "      <td>-0.608425</td>\n",
+       "      <td>-0.082231</td>\n",
+       "      <td>0.221715</td>\n",
+       "      <td>-0.309365</td>\n",
+       "      <td>0.216776</td>\n",
+       "      <td>-0.067155</td>\n",
+       "      <td>0.044557</td>\n",
+       "      <td>-0.023912</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>5Y</td>\n",
+       "      <td>0.329235</td>\n",
+       "      <td>-0.229619</td>\n",
+       "      <td>0.457921</td>\n",
+       "      <td>0.143783</td>\n",
+       "      <td>-0.019317</td>\n",
+       "      <td>0.017486</td>\n",
+       "      <td>0.037995</td>\n",
+       "      <td>-0.404953</td>\n",
+       "      <td>0.302052</td>\n",
+       "      <td>-0.592595</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>7Y</td>\n",
+       "      <td>0.330420</td>\n",
+       "      <td>-0.118848</td>\n",
+       "      <td>0.428004</td>\n",
+       "      <td>0.159625</td>\n",
+       "      <td>0.029568</td>\n",
+       "      <td>-0.220538</td>\n",
+       "      <td>0.133711</td>\n",
+       "      <td>-0.271828</td>\n",
+       "      <td>-0.147959</td>\n",
+       "      <td>0.710534</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>10Y</td>\n",
+       "      <td>0.348105</td>\n",
+       "      <td>0.112615</td>\n",
+       "      <td>0.092043</td>\n",
+       "      <td>-0.654990</td>\n",
+       "      <td>-0.001470</td>\n",
+       "      <td>0.118209</td>\n",
+       "      <td>0.023762</td>\n",
+       "      <td>-0.091919</td>\n",
+       "      <td>-0.610553</td>\n",
+       "      <td>-0.181364</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>12Y</td>\n",
+       "      <td>0.323295</td>\n",
+       "      <td>0.086128</td>\n",
+       "      <td>0.256542</td>\n",
+       "      <td>0.168586</td>\n",
+       "      <td>0.314484</td>\n",
+       "      <td>-0.084838</td>\n",
+       "      <td>0.301119</td>\n",
+       "      <td>0.759981</td>\n",
+       "      <td>-0.020849</td>\n",
+       "      <td>-0.138024</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>15Y</td>\n",
+       "      <td>0.326902</td>\n",
+       "      <td>0.212834</td>\n",
+       "      <td>-0.018915</td>\n",
+       "      <td>-0.503491</td>\n",
+       "      <td>0.061284</td>\n",
+       "      <td>0.102713</td>\n",
+       "      <td>-0.190704</td>\n",
+       "      <td>0.080454</td>\n",
+       "      <td>0.689556</td>\n",
+       "      <td>0.247673</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>20Y</td>\n",
+       "      <td>0.303121</td>\n",
+       "      <td>0.247916</td>\n",
+       "      <td>-0.111279</td>\n",
+       "      <td>0.218147</td>\n",
+       "      <td>-0.073090</td>\n",
+       "      <td>-0.524125</td>\n",
+       "      <td>-0.687149</td>\n",
+       "      <td>0.050714</td>\n",
+       "      <td>-0.132298</td>\n",
+       "      <td>-0.119945</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>25Y</td>\n",
+       "      <td>0.298802</td>\n",
+       "      <td>0.351015</td>\n",
+       "      <td>-0.244909</td>\n",
+       "      <td>0.148299</td>\n",
+       "      <td>-0.702334</td>\n",
+       "      <td>-0.052096</td>\n",
+       "      <td>0.452434</td>\n",
+       "      <td>-0.015656</td>\n",
+       "      <td>0.060049</td>\n",
+       "      <td>-0.031599</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9</th>\n",
+       "      <td>30Y</td>\n",
+       "      <td>0.300448</td>\n",
+       "      <td>0.368334</td>\n",
+       "      <td>-0.299318</td>\n",
+       "      <td>0.378394</td>\n",
+       "      <td>0.452473</td>\n",
+       "      <td>0.501385</td>\n",
+       "      <td>-0.006431</td>\n",
+       "      <td>-0.277741</td>\n",
+       "      <td>-0.083634</td>\n",
+       "      <td>0.031517</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  Node       PC1       PC2       PC3       PC4       PC5       PC6       PC7  \\\n",
+       "0   2Y  0.266878 -0.480085 -0.018462  0.152926 -0.378934  0.542975 -0.359401   \n",
+       "1   3Y  0.327425 -0.562962 -0.608425 -0.082231  0.221715 -0.309365  0.216776   \n",
+       "2   5Y  0.329235 -0.229619  0.457921  0.143783 -0.019317  0.017486  0.037995   \n",
+       "3   7Y  0.330420 -0.118848  0.428004  0.159625  0.029568 -0.220538  0.133711   \n",
+       "4  10Y  0.348105  0.112615  0.092043 -0.654990 -0.001470  0.118209  0.023762   \n",
+       "5  12Y  0.323295  0.086128  0.256542  0.168586  0.314484 -0.084838  0.301119   \n",
+       "6  15Y  0.326902  0.212834 -0.018915 -0.503491  0.061284  0.102713 -0.190704   \n",
+       "7  20Y  0.303121  0.247916 -0.111279  0.218147 -0.073090 -0.524125 -0.687149   \n",
+       "8  25Y  0.298802  0.351015 -0.244909  0.148299 -0.702334 -0.052096  0.452434   \n",
+       "9  30Y  0.300448  0.368334 -0.299318  0.378394  0.452473  0.501385 -0.006431   \n",
+       "\n",
+       "        PC8       PC9      PC10  \n",
+       "0  0.291825 -0.089930  0.117206  \n",
+       "1 -0.067155  0.044557 -0.023912  \n",
+       "2 -0.404953  0.302052 -0.592595  \n",
+       "3 -0.271828 -0.147959  0.710534  \n",
+       "4 -0.091919 -0.610553 -0.181364  \n",
+       "5  0.759981 -0.020849 -0.138024  \n",
+       "6  0.080454  0.689556  0.247673  \n",
+       "7  0.050714 -0.132298 -0.119945  \n",
+       "8 -0.015656  0.060049 -0.031599  \n",
+       "9 -0.277741 -0.083634  0.031517  "
+      ]
+     },
+     "execution_count": 36,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# attributes\n",
+    "curve.curve_id \n",
+    "curve.curve_date     \n",
+    "curve.nodes\n",
+    "curve.disc_factors\n",
+    "curve.spot_zero_rates\n",
+    "curve.spot_par_rates\n",
+    "curve.par_fwd_jacobian\n",
+    "curve.par_pc_jacobian\n",
+    "curve.fwd_par_rates\n",
+    "curve.pca_eigvals\n",
+    "curve.pca_eigvecs"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.13.7"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

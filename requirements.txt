@@ -1,0 +1,8 @@
+altair>=6.1.0
+streamlit>=1.57.0
+pandas>=2.2
+numpy>=1.26
+openpyxl>=3.1
+notebook>=7.0
+rateslib>=1.0
+matplotlib>=3.8
